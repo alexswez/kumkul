@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Динамо, оз. Кумкуль — Комендантская</title>
+    <link rel="icon" href="data:,">
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f4f1;
+        }
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f0f4f1;
+            flex-shrink: 0;
+        }
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .month-nav button {
+            background: #2d5a27;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .settings-btn {
+            background: #555;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
+            height: 100%;
+        }
+        .booking-table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 600px;
+        }
+        .booking-table th, .booking-table td {
+            border: 1px solid #ccc;
+            text-align: center;
+            padding: 4px 6px;
+            font-size: 13px;
+            position: relative;
+        }
+        .booking-table th {
+            background: #e0e0e0;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 3;
+        }
+        .booking-table th.weekend {
+            background: #E8E0F0;
+        }
+        .booking-table td.weekend {
+            background: #F5F0FA;
+        }
+        .house-header {
+            background: #f5f5f5;
+            position: sticky;
+            left: 0;
+            z-index: 2;
+        }
+        .house-name {
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .type-badge {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 4px;
+        }
+        .type-кмд { background: #4CAF50; }
+        .type-бревно { background: #8B4513; }
+        .type-вагон { background: #FF9800; }
+        .type-баня { background: #2196F3; }
+
+        .cell {
+            cursor: pointer;
+        }
+        .cell.free { background: #C8E6C9; }
+        .cell.free.weekend { background: #F5F0FA; }
+        .cell.occupied { background: #4CAF50; }
+        .cell.checkout-half {
+            background: linear-gradient(to right, #FF9800 50%, transparent 50%);
+        }
+        .cell.checkin-half {
+            background: linear-gradient(to right, transparent 50%, #4CAF50 50%);
+        }
+        .cell.turnover {
+            background: linear-gradient(135deg, #FF9800 50%, #4CAF50 50%);
+        }
+        .cell.today {
+            border: 2px solid #3F51B5 !important;
+        }
+
+        /* Модальные окна */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 400px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 20px;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            background: #2d5a27;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        .btn.danger {
+            background: #d32f2f;
+        }
+        .btn.secondary {
+            background: #555;
+        }
+        .prices-input {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="month-nav">
+            <button onclick="changeMonth(-1)">←</button>
+            <span id="month-title"></span>
+            <button onclick="changeMonth(1)">→</button>
+        </div>
+        <button class="settings-btn" id="settings-btn">⚙️ Цены</button>
+    </div>
+    <div class="table-wrapper">
+        <table class="booking-table" id="main-table">
+            <thead id="table-head"></thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal" id="booking-modal">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <div id="modal-body"></div>
+    </div>
+</div>
+
+<div class="modal" id="settings-modal">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeSettings()">&times;</button>
+        <h3>Цены за сутки (₽)</h3>
+        <div class="form-group">
+            <label>КМД (будни / выходные)</label>
+            <div class="form-row">
+                <input type="number" id="kmd-weekday" class="prices-input" placeholder="Будни">
+                <input type="number" id="kmd-weekend" class="prices-input" placeholder="Выходные">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Бревенчатые</label>
+            <div class="form-row">
+                <input type="number" id="log-weekday" class="prices-input" placeholder="Будни">
+                <input type="number" id="log-weekend" class="prices-input" placeholder="Выходные">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Вагончики</label>
+            <div class="form-row">
+                <input type="number" id="wagon-weekday" class="prices-input" placeholder="Будни">
+                <input type="number" id="wagon-weekend" class="prices-input" placeholder="Выходные">
+            </div>
+        </div>
+        <button class="btn" onclick="savePrices()">Сохранить</button>
+    </div>
+</div>
+
+<script>
+    // Ваш конфиг Firebase
+    const firebaseConfig = {
+        apiKey: "AIzaSyCFUwuh8ztkqSvHGRrvqvBvWzKaoZw2Rfs",
+        authDomain: "dinamo-kumkul.firebaseapp.com",
+        databaseURL: "https://dinamo-kumkul-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "dinamo-kumkul",
+        storageBucket: "dinamo-kumkul.firebasestorage.app",
+        messagingSenderId: "44321082413",
+        appId: "1:44321082413:web:8e07754d401cfae04bfca4"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // Дома (без бани)
+    const defaultHouses = [
+        { name: 'КМД 1', type: 'кмд' }, { name: 'КМД 2', type: 'кмд' }, { name: 'КМД 3', type: 'кмд' }, { name: 'КМД 4', type: 'кмд' }, { name: 'КМД 5', type: 'кмд' },
+        { name: 'Бревенчатый 6', type: 'бревно' }, { name: 'Бревенчатый 7', type: 'бревно' }, { name: 'Бревенчатый 8', type: 'бревно' }, { name: 'Бревенчатый 9', type: 'бревно' },
+        { name: 'Вагончик 1', type: 'вагон' }, { name: 'Вагончик 2', type: 'вагон' }, { name: 'Вагончик 3', type: 'вагон' }, { name: 'Вагончик 4', type: 'вагон' }, { name: 'Вагончик 5', type: 'вагон' }
+    ];
+
+    let houses = [];
+    let config = {
+        кмд: { weekday: 2000, weekend: 2500 },
+        бревно: { weekday: 1500, weekend: 2000 },
+        вагон: { weekday: 1000, weekend: 1500 }
+    };
+    let currentYear, currentMonth;
+    let allGuests = [];
+
+    // Формат дат ДД.ММ.ГГГГ
+    function formatDate(dateStr) {
+        if (!dateStr) return '';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}.${m}.${y}`;
+    }
+    function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
+    function dateStr(year, month, day) {
+        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+    function parseDate(str) {
+        const [y, m, d] = str.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+    function isWeekend(date) { const d = new Date(date); return d.getDay() === 0 || d.getDay() === 6; }
+
+    // Загрузка данных из Firebase
+    function initFirebase() {
+        database.ref('houses').on('value', snap => {
+            if (snap.exists()) {
+                houses = Object.values(snap.val())
+                    .filter(h => h.type !== 'баня')
+                    .map(h => ({
+                        ...h,
+                        bookings: (h.bookings || []).map(b => ({
+                            ...b,
+                            paidAmount: b.paidAmount || 0,
+                            totalPrice: b.totalPrice || 0
+                        }))
+                    }));
+            } else {
+                houses = defaultHouses.map(h => ({ ...h, bookings: [] }));
+                database.ref('houses').set(houses);
+            }
+            updateGuestsList();
+            renderTable();
+        });
+        database.ref('config/prices').on('value', snap => {
+            if (snap.exists()) config = snap.val();
+            else database.ref('config/prices').set(config);
+        });
+    }
+
+    function updateGuestsList() {
+        const guestsSet = new Set();
+        houses.forEach(h => h.bookings.forEach(b => { if (b.guest) guestsSet.add(b.guest); }));
+        allGuests = Array.from(guestsSet).sort();
+    }
+
+    function saveHouses() { database.ref('houses').set(houses); }
+
+    // Текущая дата
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth();
+
+    // Отрисовка таблицы
+    function renderTable() {
+        document.getElementById('month-title').textContent = 
+            ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'][currentMonth] + ' ' + currentYear;
+
+        const days = daysInMonth(currentYear, currentMonth);
+        const todayStr = dateStr(now.getFullYear(), now.getMonth(), now.getDate());
+
+        let headHtml = '<tr><th class="house-header">Дом</th>';
+        for (let d = 1; d <= days; d++) {
+            const cellDate = new Date(currentYear, currentMonth, d);
+            const isWeekendDay = (cellDate.getDay() === 0 || cellDate.getDay() === 6);
+            headHtml += `<th class="${isWeekendDay ? 'weekend' : ''}">${d}</th>`;
+        }
+        headHtml += '</tr>';
+        document.getElementById('table-head').innerHTML = headHtml;
+
+        let bodyHtml = '';
+        houses.forEach((house, houseIdx) => {
+            bodyHtml += '<tr>';
+            bodyHtml += `<td class="house-header"><span class="type-badge type-${house.type}"></span><span class="house-name">${house.name}</span></td>`;
+            for (let d = 1; d <= days; d++) {
+                const cellDate = dateStr(currentYear, currentMonth, d);
+                const currentDate = parseDate(cellDate);
+                const dayOfWeek = currentDate.getDay();
+                const isWeekendDay = (dayOfWeek === 0 || dayOfWeek === 6);
+
+                const bookingsToday = house.bookings.filter(b => {
+                    const start = parseDate(b.checkin);
+                    const end = parseDate(b.checkout);
+                    return currentDate >= start && currentDate <= end;
+                });
+
+                let cellClass = 'cell';
+                if (bookingsToday.length > 0) {
+                    const hasCheckout = bookingsToday.some(b => parseDate(b.checkout).getTime() === currentDate.getTime());
+                    const hasCheckin = bookingsToday.some(b => parseDate(b.checkin).getTime() === currentDate.getTime());
+
+                    if (hasCheckout && hasCheckin) {
+                        cellClass += ' turnover';
+                    } else if (hasCheckout) {
+                        cellClass += ' checkout-half';
+                    } else if (hasCheckin) {
+                        cellClass += ' checkin-half';
+                    } else {
+                        cellClass += ' occupied';
+                    }
+                } else {
+                    cellClass += ' free';
+                    if (isWeekendDay) cellClass += ' weekend';
+                }
+
+                if (cellDate === todayStr) cellClass += ' today';
+
+                bodyHtml += `<td class="${cellClass}" onclick="handleCellClick(event, ${houseIdx}, '${cellDate}')"></td>`;
+            }
+            bodyHtml += '</tr>';
+        });
+        document.getElementById('table-body').innerHTML = bodyHtml;
+    }
+
+    function changeMonth(delta) {
+        currentMonth += delta;
+        if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+        else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+        renderTable();
+    }
+
+    // Обработчик клика по ячейке с учётом половинок
+    function handleCellClick(event, houseIdx, dateStr) {
+        const house = houses[houseIdx];
+        const cell = event.currentTarget;
+        const rect = cell.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const width = rect.width;
+        const isLeft = x < width / 2;
+
+        const classes = cell.classList;
+
+        if (classes.contains('turnover')) {
+            const y = event.clientY - rect.top;
+            const height = rect.height;
+            const isTop = y < height / 2;
+            if (isTop && isLeft) {
+                showBookingInfoForDate(houseIdx, dateStr, 'checkout');
+            } else if (!isTop && !isLeft) {
+                showBookingInfoForDate(houseIdx, dateStr, 'checkin');
+            } else {
+                openBookingModal(houseIdx, dateStr);
+            }
+        } else if (classes.contains('checkout-half')) {
+            if (isLeft) {
+                showBookingInfoForDate(houseIdx, dateStr, 'checkout');
+            } else {
+                openNewBookingModal(houseIdx, dateStr);
+            }
+        } else if (classes.contains('checkin-half')) {
+            if (!isLeft) {
+                showBookingInfoForDate(houseIdx, dateStr, 'checkin');
+            } else {
+                openNewBookingModal(houseIdx, dateStr);
+            }
+        } else if (classes.contains('occupied')) {
+            openBookingModal(houseIdx, dateStr);
+        } else {
+            openNewBookingModal(houseIdx, dateStr);
+        }
+    }
+
+    // Показать конкретную бронь (выезд или заезд)
+    function showBookingInfoForDate(houseIdx, dateStr, type) {
+        const house = houses[houseIdx];
+        const currentDate = parseDate(dateStr);
+        const booking = house.bookings.find(b => {
+            if (type === 'checkout') return parseDate(b.checkout).getTime() === currentDate.getTime();
+            else if (type === 'checkin') return parseDate(b.checkin).getTime() === currentDate.getTime();
+        });
+        if (booking) {
+            const modal = document.getElementById('booking-modal');
+            const body = document.getElementById('modal-body');
+            const debt = (booking.totalPrice || 0) - (booking.paidAmount || 0);
+            body.innerHTML = `
+                <h3>${house.name} — ${formatDate(booking.checkin)} → ${formatDate(booking.checkout)}</h3>
+                <p>Гость: ${booking.guest || '—'}</p>
+                <p>Сумма: ${booking.totalPrice || 0} ₽ | Оплачено: ${booking.paidAmount || 0} ₽ | Долг: ${debt} ₽</p>
+                <p>Комм.: ${booking.comment || ''}</p>
+                <button class="btn" onclick="editBooking(${houseIdx}, ${house.bookings.indexOf(booking)})">✏️</button>
+                <button class="btn danger" onclick="deleteBooking(${houseIdx}, ${house.bookings.indexOf(booking)})">✕</button>
+                <button class="btn secondary" onclick="closeModal()">Закрыть</button>
+            `;
+            modal.classList.add('active');
+        }
+    }
+
+    // Новая бронь
+    function openNewBookingModal(houseIdx, dateClicked) {
+        const house = houses[houseIdx];
+        const modal = document.getElementById('booking-modal');
+        const body = document.getElementById('modal-body');
+        body.innerHTML = `
+            <h3>Новая бронь — ${house.name}</h3>
+            <div class="form-row">
+                <div class="form-group"><label>Заезд</label><input type="date" id="new-checkin" value="${dateClicked}"></div>
+                <div class="form-group"><label>Выезд</label><input type="date" id="new-checkout" value="${dateClicked}"></div>
+            </div>
+            <div class="form-group"><label>Гость</label>
+                <input type="text" id="new-guest" list="guest-list" autocomplete="off">
+                <datalist id="guest-list">${allGuests.map(g => `<option value="${g}">`).join('')}</datalist>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Стоимость (авто)</label><input type="text" id="new-total" readonly></div>
+                <div class="form-group"><label>Оплачено</label><input type="number" id="new-paid" value="0"></div>
+            </div>
+            <div class="form-group"><label>Комментарий</label><input type="text" id="new-comment"></div>
+            <button class="btn" onclick="createBooking(${houseIdx})">Сохранить</button>
+            <button class="btn secondary" onclick="closeModal()">Отмена</button>
+        `;
+        document.getElementById('new-checkout').addEventListener('change', () => updateTotalPrice(houseIdx));
+        updateTotalPrice(houseIdx);
+        modal.classList.add('active');
+    }
+
+    // Все брони на день
+    function openBookingModal(houseIdx, dateClicked) {
+        const house = houses[houseIdx];
+        const bookingsOnDate = house.bookings.filter(b => {
+            const start = parseDate(b.checkin);
+            const end = parseDate(b.checkout);
+            const d = parseDate(dateClicked);
+            return d >= start && d <= end;
+        });
+
+        if (bookingsOnDate.length === 0) {
+            openNewBookingModal(houseIdx, dateClicked);
+            return;
+        }
+
+        const modal = document.getElementById('booking-modal');
+        const body = document.getElementById('modal-body');
+        let html = `<h3>Брони на ${formatDate(dateClicked)} — ${house.name}</h3>`;
+        bookingsOnDate.forEach((b, idx) => {
+            const debt = (b.totalPrice || 0) - (b.paidAmount || 0);
+            html += `
+                <div style="background:#f0f0f0; padding:10px; border-radius:8px; margin-bottom:8px;">
+                    <p><strong>${b.guest || '—'}</strong> (${formatDate(b.checkin)} → ${formatDate(b.checkout)})</p>
+                    <p>Сумма: ${b.totalPrice || 0} ₽ | Оплачено: ${b.paidAmount || 0} ₽ | Долг: ${debt} ₽</p>
+                    <p>Комм.: ${b.comment || ''}</p>
+                    <button class="btn" onclick="editBooking(${houseIdx}, ${house.bookings.indexOf(b)})">✏️</button>
+                    <button class="btn danger" onclick="deleteBooking(${houseIdx}, ${house.bookings.indexOf(b)})">✕</button>
+                </div>
+            `;
+        });
+        html += `<button class="btn secondary" onclick="closeModal()">Закрыть</button>`;
+        body.innerHTML = html;
+        modal.classList.add('active');
+    }
+
+    function updateTotalPrice(houseIdx) {
+        const house = houses[houseIdx];
+        const checkin = document.getElementById('new-checkin').value;
+        const checkout = document.getElementById('new-checkout').value;
+        if (!checkin || !checkout) return;
+        const start = parseDate(checkin);
+        const end = parseDate(checkout);
+        if (start >= end) return;
+        let total = 0;
+        const prices = config[house.type] || { weekday: 0, weekend: 0 };
+        for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+            total += isWeekend(d) ? prices.weekend : prices.weekday;
+        }
+        document.getElementById('new-total').value = total + ' ₽';
+        window._totalPrice = total;
+    }
+
+    function createBooking(houseIdx) {
+        const checkin = document.getElementById('new-checkin').value;
+        const checkout = document.getElementById('new-checkout').value;
+        const guest = document.getElementById('new-guest').value.trim();
+        const paid = Number(document.getElementById('new-paid').value) || 0;
+        const comment = document.getElementById('new-comment').value;
+        if (!checkin || !checkout || !guest) { alert('Заполните даты и гостя'); return; }
+        if (parseDate(checkin) >= parseDate(checkout)) { alert('Дата выезда должна быть позже заезда'); return; }
+        houses[houseIdx].bookings.push({
+            checkin, checkout, guest,
+            totalPrice: window._totalPrice || 0,
+            paidAmount: paid,
+            comment
+        });
+        saveHouses();
+        closeModal();
+    }
+
+    function editBooking(houseIdx, bookingIdx) {
+        const booking = houses[houseIdx].bookings[bookingIdx];
+        const body = document.getElementById('modal-body');
+        body.innerHTML = `
+            <h3>Редактировать бронь — ${houses[houseIdx].name}</h3>
+            <div class="form-row">
+                <div class="form-group"><label>Заезд</label><input type="date" id="edit-checkin" value="${booking.checkin}"></div>
+                <div class="form-group"><label>Выезд</label><input type="date" id="edit-checkout" value="${booking.checkout}"></div>
+            </div>
+            <div class="form-group"><label>Гость</label><input type="text" id="edit-guest" value="${booking.guest || ''}" list="guest-list"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Стоимость (авто)</label><input type="text" id="edit-total" readonly></div>
+                <div class="form-group"><label>Оплачено</label><input type="number" id="edit-paid" value="${booking.paidAmount || 0}"></div>
+            </div>
+            <div class="form-group"><label>Комментарий</label><input type="text" id="edit-comment" value="${booking.comment || ''}"></div>
+            <button class="btn" onclick="saveEdit(${houseIdx}, ${bookingIdx})">Сохранить</button>
+            <button class="btn secondary" onclick="closeModal()">Отмена</button>
+        `;
+        const updateEditTotal = () => {
+            const checkin = document.getElementById('edit-checkin').value;
+            const checkout = document.getElementById('edit-checkout').value;
+            if (checkin && checkout && parseDate(checkin) < parseDate(checkout)) {
+                let total = 0;
+                const prices = config[houses[houseIdx].type] || { weekday: 0, weekend: 0 };
+                for (let d = new Date(parseDate(checkin)); d < parseDate(checkout); d.setDate(d.getDate() + 1)) {
+                    total += isWeekend(d) ? prices.weekend : prices.weekday;
+                }
+                document.getElementById('edit-total').value = total + ' ₽';
+                window._editTotal = total;
+            }
+        };
+        document.getElementById('edit-checkout').addEventListener('change', updateEditTotal);
+        updateEditTotal();
+    }
+
+    function saveEdit(houseIdx, bookingIdx) {
+        const b = houses[houseIdx].bookings[bookingIdx];
+        b.checkin = document.getElementById('edit-checkin').value;
+        b.checkout = document.getElementById('edit-checkout').value;
+        b.guest = document.getElementById('edit-guest').value;
+        b.paidAmount = Number(document.getElementById('edit-paid').value) || 0;
+        b.totalPrice = window._editTotal || b.totalPrice;
+        b.comment = document.getElementById('edit-comment').value;
+        saveHouses();
+        closeModal();
+    }
+
+    function deleteBooking(houseIdx, bookingIdx) {
+        if (confirm('Удалить бронь?')) {
+            houses[houseIdx].bookings.splice(bookingIdx, 1);
+            saveHouses();
+            closeModal();
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('booking-modal').classList.remove('active');
+    }
+
+    // ---------- Настройки цен ----------
+    function openSettings() {
+        document.getElementById('kmd-weekday').value = config.кмд.weekday;
+        document.getElementById('kmd-weekend').value = config.кмд.weekend;
+        document.getElementById('log-weekday').value = config.бревно.weekday;
+        document.getElementById('log-weekend').value = config.бревно.weekend;
+        document.getElementById('wagon-weekday').value = config.вагон.weekday;
+        document.getElementById('wagon-weekend').value = config.вагон.weekend;
+        document.getElementById('settings-modal').classList.add('active');
+    }
+
+    function closeSettings() {
+        document.getElementById('settings-modal').classList.remove('active');
+    }
+
+    function savePrices() {
+        config.кмд.weekday = Number(document.getElementById('kmd-weekday').value) || 0;
+        config.кмд.weekend = Number(document.getElementById('kmd-weekend').value) || 0;
+        config.бревно.weekday = Number(document.getElementById('log-weekday').value) || 0;
+        config.бревно.weekend = Number(document.getElementById('log-weekend').value) || 0;
+        config.вагон.weekday = Number(document.getElementById('wagon-weekday').value) || 0;
+        config.вагон.weekend = Number(document.getElementById('wagon-weekend').value) || 0;
+        database.ref('config/prices').set(config);
+        closeSettings();
+        renderTable();
+    }
+
+    // Назначаем обработчик для кнопки настроек ПРОГРАММНО
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('settings-btn').addEventListener('click', openSettings);
+
+        // Закрытие модалок по клику вне контента
+        window.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+
+        initFirebase();
+        renderTable();
+    });
+</script>
+</body>
+</html>
